@@ -1,0 +1,5 @@
+# compilation folder
+/build
+
+# doxygen documentation
+/doc
