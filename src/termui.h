@@ -633,7 +633,6 @@ private:
     TermApp *m_app;                    ///< user application
     internal::ScopedBufferedTty m_tty; ///< tty handler
     std::vector<Cell> m_frameBuffer;   ///< store / preparation of next screen content
-    bool m_dirty;                      ///< whether m_frameBuffer contains unpublished modifications
     Color m_colorFg;                   ///< screen default foreground color
     Color m_colorBg;                   ///< screen default background color
 };
@@ -684,7 +683,6 @@ inline void TermUi::addGlyph(int y, int x, char32_t glyph, Color colorFg, Color 
         cell.colorBg = colorBg;
         cell.effect = effect;
         cell.glyph = glyph;
-        m_dirty = true;
     }
 }
 
@@ -706,7 +704,6 @@ inline void TermUi::setColors(int y, int x, int width, Color colorFg, Color colo
             cellPtr->colorFg = colorFg;
             cellPtr->colorBg = colorBg;
         }
-        m_dirty = true;
     }
 }
 

@@ -157,7 +157,7 @@ void U32Format::convertMarkdown(std::u32string &str)
 }
 
 TermUi::TermUi(csys::MainPollHandler &mainPollHandler)
-    : m_tty{}, m_frameBuffer{}, m_dirty{false},
+    : m_tty{}, m_frameBuffer{},
       m_colorFg{Color::fromPalette(7)},
       m_colorBg{Color::fromPalette(0)}
 {
@@ -199,49 +199,43 @@ void TermUi::reset()
     {
         cell.reset(m_colorFg, m_colorBg);
     }
-
-    m_dirty = true;
 }
 
 void TermUi::publish()
 {
-    if (m_dirty)
+    // first clear the screen
+    m_tty.txAppend(commands::clear);
+
+    // draw each cell
+    Effect currentEffect{};
+    Color currentFg{}; // invalid
+    Color currentBg{}; // invalid
+    int x = 0;
+    int y = 0;
+    for (const auto &cell : m_frameBuffer)
     {
-        // first clear the screen
-        m_tty.txAppend(commands::clear);
+        // handle formatting
+        updateGraphicSettings(currentEffect, currentFg, currentBg,
+                              cell.effect, cell.colorFg, cell.colorBg);
 
-        // draw each cell
-        Effect currentEffect{};
-        Color currentFg{}; // invalid
-        Color currentBg{}; // invalid
-        int x = 0;
-        int y = 0;
-        for (const auto &cell : m_frameBuffer)
+        // draw glyph
+        m_tty.txAppend(cell.glyph);
+
+        // on line change, replace the cursor to avoid shift accumulation on screen resize
+        x++;
+        if (x >= m_tty.width)
         {
-            // handle formatting
-            updateGraphicSettings(currentEffect, currentFg, currentBg,
-                                  cell.effect, cell.colorFg, cell.colorBg);
-
-            // draw glyph
-            m_tty.txAppend(cell.glyph);
-
-            // on line change, replace the cursor to avoid shift accumulation on screen resize
-            x++;
-            if (x >= m_tty.width)
-            {
-                y++;
-                // place cursor at the beginning of next line
-                m_tty.txAppend("\e[" + std::to_string(y + 1) + "H");
-                x = 0;
-            }
+            y++;
+            // place cursor at the beginning of next line
+            m_tty.txAppend("\e[" + std::to_string(y + 1) + "H");
+            x = 0;
         }
-        // reset color and formatting
-        m_tty.txAppend("\e[0m");
-
-        // flush to screen
-        m_tty.txFlush();
-        m_dirty = false;
     }
+    // reset color and formatting
+    m_tty.txAppend("\e[0m");
+
+    // flush to screen
+    m_tty.txFlush();
 }
 
 void TermUi::addStdU32String(int y, int x, const std::u32string &strU32, Color colorFg, Color colorBg, Effect effect)
@@ -399,7 +393,6 @@ void TermUi::addFString(int y, int x, const std::u32string &formattedStr, int wi
             cellPtr++;
             width--;
         }
-        m_dirty = true;
     }
 }
 
@@ -425,8 +418,6 @@ void TermUi::addMarkdown(int y, int x, const std::string &str, int width)
 
         lineBegin = lineEnd + 1;
     } while (lineBegin < str.size());
-
-    m_dirty = true;
 }
 
 void TermUi::readTtyHandler(uint32_t events)
