@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Michel Palleau
+Copyright 2021 Michel Palleau
 
 This file is part of termui.
 
@@ -23,7 +23,6 @@ along with termui. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include <cmath>
-#include <sys/epoll.h>
 
 #include "termui.h"
 
@@ -49,15 +48,6 @@ namespace commands
     /// restore cursor to normal mode
     constexpr const char *cnorm = "\e[?12l\e[?25h";
 } // namespace commands
-
-namespace epollFd
-{
-    enum
-    {
-        Signal, ///< slot for signal catcher
-        Tty,    ///< slot for tty reading
-    };
-}
 
 std::u32string toU32String(const std::string &str)
 {
@@ -132,15 +122,11 @@ Color Color::fromHsv(float hue, float saturation, float value)
         return Color::fromRgb(colFull, colLow, colInter);
 }
 
-TermUi::TermUi()
-    : m_sigCatcher{}, m_tty{}, m_epoll{::epoll_create1(0)},
-      m_frameBuffer{}, m_dirty{false},
+TermUi::TermUi(csys::MainPollHandler &mainPollHandler)
+    : m_tty{}, m_frameBuffer{}, m_dirty{false},
       m_colorFg{Color::fromPalette(7)},
       m_colorBg{Color::fromPalette(0)}
 {
-    if (not m_tty.isValid())
-        throw TermUiException{"cannot open /dev/tty"};
-
     // setup the terminal
     m_tty.txAppend(commands::smcup);
     m_tty.txAppend(commands::smkx);
@@ -149,17 +135,11 @@ TermUi::TermUi()
     reset();
     publish();
 
-    // register fds monitored by epoll
-    struct epoll_event event
-    {
-    };
-    event.events = EPOLLIN;
-    event.data.u32 = epollFd::Signal;
-    if (::epoll_ctl(m_epoll.fd, EPOLL_CTL_ADD, m_sigCatcher.fdReceive.fd, &event) < 0)
-        throw TermUiExceptionErrno{"epoll_ctl, register signal catcher pipe"};
-    event.data.u32 = epollFd::Tty;
-    if (::epoll_ctl(m_epoll.fd, EPOLL_CTL_ADD, m_tty.fd, &event) < 0)
-        throw TermUiExceptionErrno{"epoll_ctl, register tty"};
+    // register handlers to mainPollHandler
+    mainPollHandler.add(m_tty, EPOLLIN, [this](csys::Poll &, csys::ScopedFd &, uint32_t events) {
+        this->readTtyHandler(events);
+    });
+    mainPollHandler.registerSignalHandler(SIGWINCH, [this](int) { this->resizeSigHandler(); });
 }
 
 TermUi::~TermUi()
@@ -385,91 +365,62 @@ void TermUi::addFString(int y, int x, const std::u32string &formattedStr, int wi
     m_dirty = true;
 }
 
-Event TermUi::waitForEvent(int timeoutMs)
+void TermUi::readTtyHandler(uint32_t events)
 {
-    publish();
+    if ((events & EPOLLERR) != 0)
+        abort();
 
-    // check if tty has already something available
+    while (true)
     {
-        Event event = getEventTty();
-        if (event.isValid())
-            return event;
-    }
+        // complete the rxBuffer to decode complex commands
+        m_tty.rxFd();
 
-    struct epoll_event event;
-    int nbEvents = ::epoll_wait(m_epoll.fd, &event, 1, timeoutMs);
-    if (nbEvents < 0)
-    {
-        if (errno != EINTR and errno != EAGAIN)
-            throw TermUiExceptionErrno{"epoll_wait"};
-        // wait interrupted by a signal => consider there is no event
-        nbEvents = 0;
-    }
+        // get a unicode char
+        char32_t c = m_tty.rxC32();
+        if (c <= 0) // invalid
+            break;
 
-    if (nbEvents == 0)
-        return {};
-
-    // read the associated fd to get the event
-    switch (event.data.u32)
-    {
-    case epollFd::Signal:
-        return getEventSigCatcher();
-    case epollFd::Tty:
-        return getEventTty();
-    default:
-        throw TermUiException{"unsupported epoll_wait result"};
-    }
-}
-
-Event TermUi::getEventSigCatcher()
-{
-    int signum;
-    const ssize_t nbRead = ::read(m_sigCatcher.fdReceive.fd, &signum, sizeof(signum));
-    if (nbRead < 0)
-    {
-        if (errno != EINTR and errno != EAGAIN)
-            throw TermUiExceptionErrno{"signal catcher pipe read"};
-        return {};
-    }
-    if (nbRead != sizeof(signum))
-        throw TermUiException{"signal catcher pipe inconsistent read error"};
-
-    return Event::fromSignal(signum);
-}
-
-Event TermUi::getEventTty()
-{
-    // complete the rxBuffer to decode complex commands
-    m_tty.rxFd();
-    // get a unicode char
-    char32_t c = m_tty.rxC32();
-    if (c == 0) // invalid
-        return {};
-
-    if (c <= 26)
-        // Ctrl + Letter are encoded as value 1 to 26
-        return Event::fromCtrl(c - 1);
-
-    if (c != 27)
-        // any kind of printable character, maybe in unicode
-        return Event{c};
-
-    /* c == 27: for non printable keys, terminal uses an escape encoding
-     * identify it
-     */
-    {
-        size_t consumed;
-        const char32_t event = identify_esc_seq(m_tty.m_rxBuffer.data(), m_tty.m_rxFilled, consumed);
-        if (event > 0)
+        Event event;
+        if (c <= 26)
         {
-            // sequence found
-            m_tty.rxConsume(consumed);
-            return Event{event};
+            // Ctrl + Letter are encoded as value 1 to 26
+            event = Event::fromCtrl(c - 1);
         }
-    }
+        else if (c != 27)
+        {
+            // any kind of printable character, maybe in unicode
+            event = Event{c};
+        }
+        else
+        {
+            /* c == 27: for non printable keys, terminal uses an escape encoding
+             * identify it
+             */
+            size_t consumed;
+            const char32_t eventC32 = identify_esc_seq(m_tty.m_rxBuffer.data(), m_tty.m_rxFilled, consumed);
+            if (eventC32 > 0)
+            {
+                // sequence found
+                m_tty.rxConsume(consumed);
+                event = Event{eventC32};
+            }
+            else
+            {
+                // not matching a known sequence: then it is just a "Esc"
+                event = Event{c};
+            }
+        }
 
-    // not matching a known sequence: then it is just a "Esc"
-    return Event{c};
+        // report event
+        if (m_app != nullptr)
+            m_app->eventHandler(event);
+    }
+}
+
+void TermUi::resizeSigHandler()
+{
+    if (m_app != nullptr)
+        m_app->drawHandler();
 }
 
 void TermUi::updateColorSetting(Color color, bool isFg)

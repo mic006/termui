@@ -7,10 +7,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 string(APPEND CMAKE_CXX_FLAGS " -Wall -Wextra -Werror -pipe")
+string(APPEND CMAKE_CXX_FLAGS_DEBUG " -fsanitize=address -fsanitize=undefined -ggdb3")
 string(APPEND CMAKE_CXX_FLAGS_RELEASE " -flto -s")
 
 # main executable
 add_executable(termui-demo
+    src/csys.cpp
     src/termui.cpp
     src/termui_internal.cpp
     demo/main.cpp

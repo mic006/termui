@@ -26,86 +26,129 @@ along with termui. If not, see <https://www.gnu.org/licenses/>.
 #include <locale>
 #include <stdlib.h>
 
+#include "csys.h"
 #include "termui.h"
 
 using namespace termui;
 using namespace std::string_literals;
 
-static std::string drawWelcomeScreen(TermUi &term)
+static csys::MainPollHandler mainPollHandler{};
+
+class MainApp : protected termui::TermApp
+{
+public:
+    MainApp(TermUi &term);
+    void drawHandler() override;
+    void eventHandler(Event event) override;
+
+protected:
+    enum class DemoScreen
+    {
+        Welcome,
+        TextEffect,
+        Palette,
+        RgbFg,
+        RgbBg,
+        Keyboard,
+        Doc,
+    };
+
+    std::string drawWelcomeScreen();
+    std::string drawTextEffectScreen();
+    std::string drawPaletteScreen();
+    std::string drawRgbScreen(bool isFg);
+    std::string drawKeyboardScreen();
+    std::string drawDocScreen();
+
+    DemoScreen m_screen; ///< current screen
+    char32_t m_glyph;    ///< glyph used to fill RGB screens
+    Event m_lastEvent{}; ///< last event for keyboard screen
+};
+
+MainApp::MainApp(TermUi &term)
+    : termui::TermApp{term},
+      m_screen{DemoScreen::Welcome},
+      m_glyph{'X'}
+
+{
+    drawHandler();
+}
+
+std::string MainApp::drawWelcomeScreen()
 {
     int line = 2;
-    term.addString(line++, 0, "You can use the following keys to go through the demo:");
-    term.addString(line++, 0, "- Esc / q / Ctrl+C : quit the demo");
-    term.addString(line++, 0, "- 0 / h : this help screen");
-    term.addString(line++, 0, "- 1 : text effects.");
-    term.addString(line++, 0, "- 2 : palette colors.");
-    term.addString(line++, 0, "- 3 : RGB gradient foreground color. Press any key to change the character used.");
-    term.addString(line++, 0, "- 4 : RGB gradient background color. Press any key to change the character used.");
-    term.addString(line++, 0, "- 5 : keyboard / event demo: display the captured events.");
-    term.addString(line++, 0, "- 6 : extract of the API documentation.");
+    m_term.addString(line++, 0, "You can use the following keys to go through the demo:");
+    m_term.addString(line++, 0, "- Esc / q / Ctrl+C : quit the demo");
+    m_term.addString(line++, 0, "- 0 / h : this help screen");
+    m_term.addString(line++, 0, "- 1 : text effects.");
+    m_term.addString(line++, 0, "- 2 : palette colors.");
+    m_term.addString(line++, 0, "- 3 : RGB gradient foreground color. Press any key to change the character used.");
+    m_term.addString(line++, 0, "- 4 : RGB gradient background color. Press any key to change the character used.");
+    m_term.addString(line++, 0, "- 5 : keyboard / event demo: display the captured events.");
+    m_term.addString(line++, 0, "- 6 : extract of the API documentation.");
     line++;
-    term.addString(line++, 0, "You can also resize the window at any moment to see the refresh.");
+    m_term.addString(line++, 0, "You can also resize the window at any moment to see the refresh.");
 
     return "TermUI demo";
 }
 
-static std::string drawTextEffectScreen(TermUi &term)
+std::string MainApp::drawTextEffectScreen()
 {
     int line = 2;
-    term.addString(line++, 0, "With default color, normal text");
-    term.addString(line++, 0, "Bold text (may appear brighter)", Effect::kBold);
-    term.addString(line++, 0, "Italic text", Effect::kItalic);
-    term.addString(line++, 0, "Underline text", Effect::kUnderline);
-    term.addString(line++, 0, "Blinking text", Effect::kBlink);
-    term.addString(line++, 0, "Reversed-video text", Effect::kReverseVideo);
-    term.addString(line++, 0, "Concealed text", Effect::kConceal);
-    term.addString(line++, 0, "Crossed-out text", Effect::kCrossedOut);
+    m_term.addString(line++, 0, "With default color, normal text");
+    m_term.addString(line++, 0, "Bold text (may appear brighter)", Effect::kBold);
+    m_term.addString(line++, 0, "Italic text", Effect::kItalic);
+    m_term.addString(line++, 0, "Underline text", Effect::kUnderline);
+    m_term.addString(line++, 0, "Blinking text", Effect::kBlink);
+    m_term.addString(line++, 0, "Reversed-video text", Effect::kReverseVideo);
+    m_term.addString(line++, 0, "Concealed text", Effect::kConceal);
+    m_term.addString(line++, 0, "Crossed-out text", Effect::kCrossedOut);
     line++;
 
     Color black = Color::fromPalette(0);
     Color color = Color::fromPalette(27);
-    term.addString(line++, 0, "With fixed foreground color, normal text", color, black);
-    term.addString(line++, 0, "Bold text (not brighter as color is fixed)", color, black, Effect::kBold);
-    term.addString(line++, 0, "Italic text", color, black, Effect::kItalic);
-    term.addString(line++, 0, "Underline text", color, black, Effect::kUnderline);
-    term.addString(line++, 0, "Blinking text", color, black, Effect::kBlink);
-    term.addString(line++, 0, "Reversed-video text", color, black, Effect::kReverseVideo);
-    term.addString(line++, 0, "Concealed text", color, black, Effect::kConceal);
-    term.addString(line++, 0, "Crossed-out text", color, black, Effect::kCrossedOut);
+    m_term.addString(line++, 0, "With fixed foreground color, normal text", color, black);
+    m_term.addString(line++, 0, "Bold text (not brighter as color is fixed)", color, black, Effect::kBold);
+    m_term.addString(line++, 0, "Italic text", color, black, Effect::kItalic);
+    m_term.addString(line++, 0, "Underline text", color, black, Effect::kUnderline);
+    m_term.addString(line++, 0, "Blinking text", color, black, Effect::kBlink);
+    m_term.addString(line++, 0, "Reversed-video text", color, black, Effect::kReverseVideo);
+    m_term.addString(line++, 0, "Concealed text", color, black, Effect::kConceal);
+    m_term.addString(line++, 0, "Crossed-out text", color, black, Effect::kCrossedOut);
 
     return "TermUI demo - Text effect";
 }
 
-static std::string drawPaletteScreen(TermUi &term)
+std::string MainApp::drawPaletteScreen()
 {
     int line = 2;
     const int blockWidth = 6;
     Color black = Color::fromPalette(0);
     Color white = Color::fromPalette(15);
 
-    term.addString(line++, 0, "Standard colors");
+    m_term.addString(line++, 0, "Standard colors");
     for (int c = 0; c < 8; c++)
     {
         const int paletteIndex = c;
-        term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, white, Color::fromPalette(paletteIndex));
+        m_term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, white, Color::fromPalette(paletteIndex));
     }
     line += 2;
 
-    term.addString(line++, 0, "High-intensity colors");
+    m_term.addString(line++, 0, "High-intensity colors");
     for (int c = 0; c < 8; c++)
     {
         const int paletteIndex = 8 + c;
-        term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, black, Color::fromPalette(paletteIndex));
+        m_term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, black, Color::fromPalette(paletteIndex));
     }
     line += 2;
 
-    term.addString(line++, 0, "216 colors");
+    m_term.addString(line++, 0, "216 colors");
     for (int y = 0; y < 6; y++, line++)
     {
         for (int c = 0; c < 18; c++)
         {
             const int paletteIndex = 16 + 36 * y + c;
-            term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, white, Color::fromPalette(paletteIndex));
+            m_term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, white, Color::fromPalette(paletteIndex));
         }
     }
     for (int y = 0; y < 6; y++, line++)
@@ -113,32 +156,32 @@ static std::string drawPaletteScreen(TermUi &term)
         for (int c = 0; c < 18; c++)
         {
             const int paletteIndex = 16 + 36 * y + 18 + c;
-            term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, black, Color::fromPalette(paletteIndex));
+            m_term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, black, Color::fromPalette(paletteIndex));
         }
     }
     line++;
 
-    term.addString(line++, 0, "24 grey shades");
+    m_term.addString(line++, 0, "24 grey shades");
     for (int c = 0; c < 12; c++)
     {
         const int paletteIndex = 232 + c;
-        term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, white, Color::fromPalette(paletteIndex));
+        m_term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, white, Color::fromPalette(paletteIndex));
     }
     line++;
     for (int c = 0; c < 12; c++)
     {
         const int paletteIndex = 244 + c;
-        term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, black, Color::fromPalette(paletteIndex));
+        m_term.addStringN(line, c * blockWidth, std::to_string(paletteIndex), blockWidth, TextAlignment::kCentered, black, Color::fromPalette(paletteIndex));
     }
     line++;
 
     return "TermUI demo - Color palette";
 }
 
-static std::string drawRgbScreen(TermUi &term, char32_t glyph, bool isFg)
+std::string MainApp::drawRgbScreen(bool isFg)
 {
-    const int width = term.width();
-    const int height = term.height();
+    const int width = m_term.width();
+    const int height = m_term.height();
     float hueStep = 360.0 / width;
     float valueStep = 1.0 / (height - 2);
     Color black = Color::fromRgb(0, 0, 0);
@@ -148,45 +191,36 @@ static std::string drawRgbScreen(TermUi &term, char32_t glyph, bool isFg)
         for (int x = 0; x < width; x++)
         {
             Color color = Color::fromHsv(x * hueStep, 1.0, 1.0 - (line - 1) * valueStep);
-            term.addGlyph(line, x, glyph, isFg ? color : black, isFg ? black : color);
+            m_term.addGlyph(line, x, m_glyph, isFg ? color : black, isFg ? black : color);
         }
     }
 
     return "TermUI demo - RBG palette";
 }
 
-static const char *SpecialKeys[] = {
-    "<ArrowUp>",
-    "<ArrowDown>",
-    "<ArrowRight>",
-    "<ArrowLeft>",
-    "<Insert>",
-    "<Delete>",
-    "<End>",
-    "<Home>",
-    "<PageUp>",
-    "<PageDown>",
-    "<KeypadCenter>",
-};
-
-static std::string drawKeyboardScreen(TermUi &term, Event lastEvent)
+std::string MainApp::drawKeyboardScreen()
 {
+    static const char *SpecialKeys[] = {
+        "<ArrowUp>",
+        "<ArrowDown>",
+        "<ArrowRight>",
+        "<ArrowLeft>",
+        "<Insert>",
+        "<Delete>",
+        "<End>",
+        "<Home>",
+        "<PageUp>",
+        "<PageDown>",
+        "<KeypadCenter>",
+    };
+
     int line = 2;
-    const char32_t value = lastEvent.value();
+    const char32_t value = m_lastEvent.value();
     std::string eventDesc = "";
     bool displayGlyph = false;
     // look for some special events
     switch (value)
     {
-    case Event::kSigInt:
-        eventDesc = "[Signal] SIGINT";
-        break;
-    case Event::kSigTerm:
-        eventDesc = "[Signal] SIGTERM";
-        break;
-    case Event::kTermResize:
-        eventDesc = "[Signal] SIGWINCH = Terminal resize";
-        break;
     case Event::kBackspace:
         eventDesc = "<BackSpace>";
         break;
@@ -242,165 +276,144 @@ static std::string drawKeyboardScreen(TermUi &term, Event lastEvent)
         break;
     }
 
-    term.addString(line++, 0, "Press any key (or key combination) to see the associated event.");
+    m_term.addString(line++, 0, "Press any key (or key combination) to see the associated event.");
     line++;
     const std::string str = "Last event: " + eventDesc;
-    term.addString(line, 0, str);
+    m_term.addString(line, 0, str);
     if (displayGlyph)
-        term.addGlyph(line, str.size(), lastEvent.value() & Event::valueMask);
+        m_term.addGlyph(line, str.size(), m_lastEvent.value() & Event::valueMask);
 
     return "TermUI demo - Keyboard / capture events";
 }
 
-static std::string drawDocScreen(TermUi &term)
+std::string MainApp::drawDocScreen()
 {
-    const int width = term.width();
+    const int width = m_term.width();
     char32_t italic = U32Format::buildEffect(Effect::kItalic);
     char32_t normal = U32Format::buildEffect(0);
 
     int line = 2;
-    term.addString(line++, 0, "Minimal usage", Effect::kBold);
-    term.addFString(line++, 0, U"- instantiate a "s + italic + U"TermUi", width);
-    term.addFString(line++, 0, U"- use the "s + italic + U"addString*()" + normal + U" methods to add content to the screen", width);
-    term.addFString(line++, 0, U"- call "s + italic + U"waitForEvent()" + normal + U" to wait for user interaction", width);
-    term.addString(line++, 0, "- handle at least the following events:");
-    term.addFString(line++, 0, U"  - "s + italic + U"kCtrlC" + normal + U", "s + italic + U"kSigInt" + normal + U", "s + italic + U"kSigTerm" + normal + U" to quit the application", width);
-    term.addFString(line++, 0, U"  - "s + italic + U"kTermResize" + normal + U" to redraw the screen based on its new size", width);
+    m_term.addString(line++, 0, "Minimal usage", Effect::kBold);
+    m_term.addFString(line++, 0, U"- instantiate a "s + italic + U"TermUi", width);
+    m_term.addFString(line++, 0, U"- use the "s + italic + U"addString*()" + normal + U" methods to add content to the screen", width);
+    m_term.addFString(line++, 0, U"- call "s + italic + U"waitForEvent()" + normal + U" to wait for user interaction", width);
+    m_term.addString(line++, 0, "- handle at least the following events:");
+    m_term.addFString(line++, 0, U"  - "s + italic + U"kCtrlC" + normal + U", "s + italic + U"kSigInt" + normal + U", "s + italic + U"kSigTerm" + normal + U" to quit the application", width);
+    m_term.addFString(line++, 0, U"  - "s + italic + U"kTermResize" + normal + U" to redraw the screen based on its new size", width);
     line++;
-    term.addString(line++, 0, "Important APIs", Effect::kBold);
-    term.addFString(line++, 0, U"- "s + italic + U"addGlyph" + normal + U": add a single unicode character at the given position", width);
-    term.addFString(line++, 0, U"- "s + italic + U"addString" + normal + U": add a UTF-8 string, starting at the given position", width);
-    term.addFString(line++, 0, U"- "s + italic + U"addStringN" + normal + U": add a UTF-8 string with a fixed length, with alignment and clipping options", width);
-    term.addFString(line++, 0, U"- "s + italic + U"addStringsN" + normal + U": add 3 UTF-8 strings as left / middle / right in a given length", width);
-    term.addString(line++, 0, "  (used to display the footer)");
-    term.addFString(line++, 0, U"- "s + italic + U"addFString" + normal + U": add a UTF-32 string with special formatting values to change colors / effects in the middle", width);
-    term.addString(line++, 0, "  (used to display most lines of this list)");
-    term.addFString(line++, 0, U"- "s + italic + U"waitForEvent" + normal + U": publish frame buffer content to the screen and wait for an event (keyboard, signal, resize)", width);
+    m_term.addString(line++, 0, "Important APIs", Effect::kBold);
+    m_term.addFString(line++, 0, U"- "s + italic + U"addGlyph" + normal + U": add a single unicode character at the given position", width);
+    m_term.addFString(line++, 0, U"- "s + italic + U"addString" + normal + U": add a UTF-8 string, starting at the given position", width);
+    m_term.addFString(line++, 0, U"- "s + italic + U"addStringN" + normal + U": add a UTF-8 string with a fixed length, with alignment and clipping options", width);
+    m_term.addFString(line++, 0, U"- "s + italic + U"addStringsN" + normal + U": add 3 UTF-8 strings as left / middle / right in a given length", width);
+    m_term.addString(line++, 0, "  (used to display the footer)");
+    m_term.addFString(line++, 0, U"- "s + italic + U"addFString" + normal + U": add a UTF-32 string with special formatting values to change colors / effects in the middle", width);
+    m_term.addString(line++, 0, "  (used to display most lines of this list)");
+    m_term.addFString(line++, 0, U"- "s + italic + U"waitForEvent" + normal + U": publish frame buffer content to the screen and wait for an event (keyboard, signal, resize)", width);
 
     return "TermUI demo - extract of API doc";
 }
 
-enum class DemoScreen
+void MainApp::drawHandler()
 {
-    Welcome,
-    TextEffect,
-    Palette,
-    RgbFg,
-    RgbBg,
-    Keyboard,
-    Doc,
-};
+    m_term.reset();
+    std::string title;
+    switch (m_screen)
+    {
+    case DemoScreen::Welcome:
+        title = drawWelcomeScreen();
+        break;
+    case DemoScreen::TextEffect:
+        title = drawTextEffectScreen();
+        break;
+    case DemoScreen::Palette:
+        title = drawPaletteScreen();
+        break;
+    case DemoScreen::RgbFg:
+        title = drawRgbScreen(true);
+        break;
+    case DemoScreen::RgbBg:
+        title = drawRgbScreen(false);
+        break;
+    case DemoScreen::Keyboard:
+        title = drawKeyboardScreen();
+        break;
+    case DemoScreen::Doc:
+        title = drawDocScreen();
+        break;
+    }
+    // add title and footer
+    m_term.addStringN(0, 0, title, m_term.width(), TextAlignment::kCentered, Effect::kReverseVideo);
+    m_term.addStringsN(m_term.height() - 1, 0, " q / Ctrl+c to quit", "", "F1 / h for help ", m_term.width(), Effect::kReverseVideo);
+
+    m_term.publish();
+}
+
+void MainApp::eventHandler(Event event)
+{
+    m_lastEvent = event;
+
+    switch (event.value())
+    {
+    case Event::kCtrlC:
+    case Event::kEscape:
+    case 'q':
+    case 'Q':
+        mainPollHandler.requestTermination();
+        break;
+
+    case Event::kF1:
+    case 'h':
+    case 'H':
+    case '0':
+        m_screen = DemoScreen::Welcome;
+        break;
+
+    case '1':
+        m_screen = DemoScreen::TextEffect;
+        break;
+
+    case '2':
+        m_screen = DemoScreen::Palette;
+        break;
+
+    case '3':
+        m_screen = DemoScreen::RgbFg;
+        m_glyph = 'X';
+        break;
+
+    case '4':
+        m_screen = DemoScreen::RgbBg;
+        m_glyph = 'X';
+        break;
+
+    case '5':
+        m_screen = DemoScreen::Keyboard;
+        break;
+
+    case '6':
+        m_screen = DemoScreen::Doc;
+        break;
+
+    default:
+        if ((event.value() & (Event::specialMask | Event::invalidMask)) == 0)
+        {
+            // printable character
+            m_glyph = event.value() & Event::valueMask;
+        }
+        break;
+    }
+
+    // redraw screen
+    drawHandler();
+}
 
 int main()
 {
     std::locale::global(std::locale(""));
-    TermUi term{};
-    DemoScreen screen = DemoScreen::Welcome;
-    char32_t glyph = 'X';
-    bool exit = false;
-    Event lastEvent{};
+    mainPollHandler.setSignals(SIGINT, SIGTERM, SIGWINCH);
+    TermUi term{mainPollHandler};
+    MainApp mainapp{term};
 
-    while (not exit)
-    {
-        term.reset();
-        std::string title;
-        switch (screen)
-        {
-        case DemoScreen::Welcome:
-            title = drawWelcomeScreen(term);
-            break;
-        case DemoScreen::TextEffect:
-            title = drawTextEffectScreen(term);
-            break;
-        case DemoScreen::Palette:
-            title = drawPaletteScreen(term);
-            break;
-        case DemoScreen::RgbFg:
-            title = drawRgbScreen(term, glyph, true);
-            break;
-        case DemoScreen::RgbBg:
-            title = drawRgbScreen(term, glyph, false);
-            break;
-        case DemoScreen::Keyboard:
-            title = drawKeyboardScreen(term, lastEvent);
-            break;
-        case DemoScreen::Doc:
-            title = drawDocScreen(term);
-            break;
-        }
-        // add title and footer
-        term.addStringN(0, 0, title, term.width(), TextAlignment::kCentered, Effect::kReverseVideo);
-        term.addStringsN(term.height() - 1, 0, " q / Ctrl+c to quit", "", "F1 / h for help ", term.width(), Effect::kReverseVideo);
-
-        const Event event = term.waitForEvent();
-        if (false)
-        {
-            // log event to stderr
-            const uint32_t v = event.value();
-            std::cerr << "Event: ";
-            std::cerr << std::hex << v;
-            if (v >= 32 and v < 128)
-                std::cerr << " " << (char)v;
-            std::cerr << std::endl;
-        }
-        lastEvent = event;
-
-        switch (event.value())
-        {
-        case Event::kTermResize:
-            break;
-
-        case Event::kSigInt:
-        case Event::kSigTerm:
-        case Event::kCtrlC:
-        case Event::kEscape:
-        case 'q':
-        case 'Q':
-            exit = true;
-            break;
-
-        case Event::kF1:
-        case 'h':
-        case 'H':
-        case '0':
-            screen = DemoScreen::Welcome;
-            break;
-
-        case '1':
-            screen = DemoScreen::TextEffect;
-            break;
-
-        case '2':
-            screen = DemoScreen::Palette;
-            break;
-
-        case '3':
-            screen = DemoScreen::RgbFg;
-            glyph = 'X';
-            break;
-
-        case '4':
-            screen = DemoScreen::RgbBg;
-            glyph = 'X';
-            break;
-
-        case '5':
-            screen = DemoScreen::Keyboard;
-            break;
-
-        case '6':
-            screen = DemoScreen::Doc;
-            break;
-
-        default:
-            if ((event.value() & (Event::specialMask | Event::invalidMask | Event::signalMask)) == 0)
-            {
-                // printable character
-                glyph = event.value() & Event::valueMask;
-            }
-            break;
-        }
-    }
-
-    return EXIT_SUCCESS;
+    return mainPollHandler.runForever();
 }

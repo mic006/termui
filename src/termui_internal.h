@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Michel Palleau
+Copyright 2021 Michel Palleau
 
 This file is part of termui.
 
@@ -35,89 +35,13 @@ along with termui. If not, see <https://www.gnu.org/licenses/>.
 #include <utility>
 #include <vector>
 
+#include "csys.h"
+
 namespace termui::internal
 {
-/// Encapsulate a file handle to ensure proper closing
-struct ScopedFd
-{
-    /** Open a file.
-     * @param[in] path  path to file to open
-     * @param[in] flags system call open flags
-     * @return ScopedFd instance
-     */
-    static ScopedFd open(const std::string &path, int flags)
-    {
-        return ScopedFd{::open(path.c_str(), flags)};
-    }
-
-    ScopedFd()
-        : fd{-1} {}
-    ScopedFd(int _fd)
-        : fd{_fd} {}
-    ~ScopedFd()
-    {
-        if (isValid())
-            ::close(fd);
-    }
-
-    // not copyable
-    ScopedFd(const ScopedFd &) = delete;
-    ScopedFd &operator=(const ScopedFd &) = delete;
-
-    // movable
-    ScopedFd(ScopedFd &&other) noexcept
-        : fd{std::exchange(other.fd, -1)}
-    {
-    }
-    ScopedFd &operator=(ScopedFd &&other) noexcept
-    {
-        std::swap(fd, other.fd);
-        return *this;
-    }
-
-    /** Whether the contained file descriptor is valid.
-     * @return whether the contained file descriptor is valid
-     */
-    bool isValid() const
-    {
-        return fd >= 0;
-    }
-
-    int fd; ///< file handle
-};
-
-/// Encapsulate signal catching
-struct ScopedSignalCatcher
-{
-    ScopedSignalCatcher();
-    ~ScopedSignalCatcher();
-
-    // not copyable
-    ScopedSignalCatcher(const ScopedSignalCatcher &) = delete;
-    ScopedSignalCatcher &operator=(const ScopedSignalCatcher &) = delete;
-
-    // not movable
-    ScopedSignalCatcher(ScopedSignalCatcher &&) noexcept = delete;
-    ScopedSignalCatcher &operator=(ScopedSignalCatcher &&) noexcept = delete;
-
-    /** Signal handler
-     * @param[in] signum  signal number
-     */
-    void handle(int signum)
-    {
-        ::write(fdEmit.fd, &signum, sizeof(signum));
-    }
-
-    // pipe ends
-    ScopedFd fdEmit;                 ///< emit signum from signal handler towards the main loop
-    ScopedFd fdReceive;              ///< get signum inside the main loop
-    struct sigaction oldSigActWinch; ///< restore sigaction for SIGWINCH
-    struct sigaction oldSigActInt;   ///< restore sigaction for SIGINT
-    struct sigaction oldSigActTerm;  ///< restore sigaction for SIGTERM
-};
 
 /// Encapsulate tty handle
-struct ScopedTty : public ScopedFd
+struct ScopedTty : public csys::ScopedFd
 {
     ScopedTty();
     ~ScopedTty();
@@ -186,7 +110,7 @@ inline void ScopedTty::retrieveSize()
 {
     struct winsize screenSize;
 
-    ioctl(fd, TIOCGWINSZ, &screenSize);
+    ioctl(TIOCGWINSZ, &screenSize);
 
     width = screenSize.ws_col;
     height = screenSize.ws_row;
@@ -225,7 +149,7 @@ inline char32_t ScopedBufferedTty::rxC32()
     }
     else
     {
-        /// char properly decoded
+        // char properly decoded
         rxConsume(rc);
     }
     return result;

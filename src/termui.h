@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Michel Palleau
+Copyright 2021 Michel Palleau
 
 This file is part of termui.
 
@@ -57,19 +57,14 @@ class Event
 {
 public:
     static constexpr char32_t invalidMask = 0x80000000;
-    static constexpr char32_t signalMask = 0x40000000;
-    static constexpr char32_t ctrlMask = 0x20000000;
-    static constexpr char32_t altMask = 0x10000000;   // non-printable chars only
-    static constexpr char32_t shiftMask = 0x08000000; // non-printable chars only
-    static constexpr char32_t specialMask = 0x04000000;
+    static constexpr char32_t ctrlMask = 0x40000000;
+    static constexpr char32_t altMask = 0x20000000;   // non-printable chars only
+    static constexpr char32_t shiftMask = 0x10000000; // non-printable chars only
+    static constexpr char32_t specialMask = 0x08000000;
     static constexpr char32_t valueMask = 0x01FFFFF; // unicode on 21 bits
 
     // constant for special events
     static constexpr char32_t kInvalid = invalidMask;
-
-    static constexpr char32_t kSigInt = signalMask | SIGINT;
-    static constexpr char32_t kSigTerm = signalMask | SIGTERM;
-    static constexpr char32_t kTermResize = signalMask | SIGWINCH;
 
     static constexpr char32_t kCtrlC = ctrlMask | 'C';
     static constexpr char32_t kBackspace = 0x7f;
@@ -134,11 +129,6 @@ public:
     static constexpr char32_t kCtrlPageUp = ctrlMask | kPageUp;
     static constexpr char32_t kCtrlPageDown = ctrlMask | kPageDown;
 
-    static constexpr Event fromSignal(int signum)
-    {
-        return Event{signalMask | signum};
-    }
-
     static constexpr Event fromCtrl(char32_t letterOffset)
     {
         return Event{ctrlMask | ('A' + letterOffset)};
@@ -147,7 +137,7 @@ public:
     constexpr Event(char32_t v = invalidMask)
         : m_value{v} {}
 
-    bool isValid() const
+    explicit operator bool() const
     {
         return (m_value & invalidMask) == 0;
     }
@@ -264,6 +254,7 @@ private:
 /// Visual effect on character
 struct Effect
 {
+    // constants aligned with escape sequences
     static constexpr uint32_t kBold = 1 << 1;
     static constexpr uint32_t kItalic = 1 << 3;
     static constexpr uint32_t kUnderline = 1 << 4;
@@ -294,11 +285,11 @@ struct U32Format
 {
 private:
     /// Use MSB to have an invalid unicode endpoint
-    static constexpr char32_t invalidUnicodeMask = 0x80000000;
     static constexpr char32_t effectMask = 0x40000000;
     static constexpr char32_t colorFgMask = 0x20000000;
     static constexpr char32_t colorBgMask = 0x10000000;
-    static constexpr char32_t valueMask = 0x0FFFFFFF;
+    static constexpr char32_t valueMask = 0x01FFFFF; // unicode on 21 bits
+    static constexpr char32_t invalidUnicodeMask = ~valueMask;
 
 public:
     static bool isU32Format(char32_t v)
@@ -406,18 +397,28 @@ private:
     uint32_t m_value;
 };
 
+// forward declaration
+class TermApp;
+
 /** Terminal Ui instance.
  *
  * Provides access and abstraction of the terminal.
  * 
  * ### Minimal usage
+ *
+ * - Create a daughter class of termui::MainApp
+ *   - implement drawHandler() to draw your app
+ *     - use addString*() methods to add content
+ *     - at last, call publish() to update the screen
+ *   - implement eventHandler() to manage keyboard inputs
  * 
- * - instantiate a TermUi
- * - use the addString*() methods to add content to the screen
- * - call waitForEvent() to wait for user interaction
- * - handle at least the following events:
- *   - kCtrlC, kSigInt, kSigTerm to quit the application
- *   - kTermResize to redraw the screen based on its new size
+ * - in main()
+ *   - instantiate a csys::MainPollHandler
+ *   - capture SIGINT, SIGTERM and SIGWINCH signals
+ *     ("mainPollHandler.setSignals(SIGINT, SIGTERM, SIGWINCH);")
+ *   - instantiate a termui::TermUi
+ *   - instantiate your app
+ *   - end with return "mainPollHandler.runForever();"
  * 
  * You can also look at the demo for a concrete and complete example.
  * 
@@ -427,12 +428,8 @@ private:
  * draw its content before it is displayed. All the addString*() methods modify the framebuffer,
  * not the displayed screen.
  * 
- * Once all the drawing is done, the application shall call waitForEvent()
- * to update the screen content and get a potential event (keyboard or signal).
- * 
- * It is important to call waitForEvent() often, to:
- * - have a responsive interface
- * - get and handle the screen resize event (otherwise your screen may be garbaged)
+ * Once all the drawing is done, the application shall call publish()
+ * to update the screen content.
  * 
  * ### Keyboard management
  * 
@@ -448,7 +445,7 @@ private:
 class TermUi
 {
 public:
-    TermUi();
+    TermUi(csys::MainPollHandler &mainPollHandler);
     ~TermUi();
 
     // not copyable
@@ -458,6 +455,11 @@ public:
     // movable
     TermUi(TermUi &&) noexcept = default;
     TermUi &operator=(TermUi &&) noexcept = default;
+
+    void setTermApp(TermApp *app)
+    {
+        m_app = app;
+    }
 
     /// Reset frameBuffer (without publishing)
     void reset();
@@ -545,15 +547,8 @@ public:
      */
     void addFString(int y, int x, const std::u32string &formattedStr, int width);
 
-    /** Wait for an event.
-     * 
-     * This methods call publish() to update the screen from the framebuffer (if needed), and then waits
-     * (if requested and if needed) for an event.
-     * 
-     * @param[in] timeoutMs  time to wait, in ms; 0 allows to retrieve an available event without waiting; -1 waits forever
-     * @return captured event
-     */
-    Event waitForEvent(int timeoutMs = -1);
+    /// Publish the frameBuffer content to the screen
+    void publish();
 
     /** Terminal width.
      * @return current terminal width (number of columns)
@@ -592,14 +587,11 @@ public:
     void setColors(int y, int x, int width, Color colorFg, Color colorBg);
 
 private:
-    /// Publish the frameBuffer content to the screen
-    void publish();
+    /// Handle event from m_tty
+    void readTtyHandler(uint32_t events);
 
-    /// Get event from signal catcher
-    Event getEventSigCatcher();
-
-    /// Get event from Tty
-    Event getEventTty();
+    /// Handle signal for terminal resize
+    void resizeSigHandler();
 
     /** Add a UTF-32 standard string to the framebuffer.
      * @param[in] y        line / row index, starting from 0
@@ -623,13 +615,12 @@ private:
         Color wantedFg,
         Color wantedBg);
 
-    internal::ScopedSignalCatcher m_sigCatcher; ///< signal catcher
-    internal::ScopedBufferedTty m_tty;          ///< tty handler
-    internal::ScopedFd m_epoll;                 ///< epoll instance to wait for tty / signal
-    std::vector<Cell> m_frameBuffer;            ///< store / preparation of next screen content
-    bool m_dirty;                               ///< whether m_frameBuffer contains unpublished modifications
-    Color m_colorFg;                            ///< screen default foreground color
-    Color m_colorBg;                            ///< screen default background color
+    TermApp *m_app;                    ///< user application
+    internal::ScopedBufferedTty m_tty; ///< tty handler
+    std::vector<Cell> m_frameBuffer;   ///< store / preparation of next screen content
+    bool m_dirty;                      ///< whether m_frameBuffer contains unpublished modifications
+    Color m_colorFg;                   ///< screen default foreground color
+    Color m_colorBg;                   ///< screen default background color
 };
 
 inline void TermUi::addGlyph(int y, int x, char32_t glyph, Effect effect)
@@ -700,5 +691,33 @@ inline void TermUi::setColors(int y, int x, int width, Color colorFg, Color colo
     }
     m_dirty = true;
 }
+
+/// Base class for terminal application
+class TermApp
+{
+public:
+    TermApp(TermUi &term)
+        : m_term{term}
+    {
+        m_term.setTermApp(this);
+    }
+
+    // not copyable
+    TermApp(const TermApp &) = delete;
+    TermApp &operator=(const TermApp &) = delete;
+
+    // not movable
+    TermApp(TermApp &&) noexcept = delete;
+    TermApp &operator=(TermApp &&) noexcept = delete;
+
+    /// Request complete drawing of the application
+    virtual void drawHandler() = 0;
+
+    /// Process keyboard event
+    virtual void eventHandler(Event event) = 0;
+
+protected:
+    TermUi &m_term; ///< termui handler
+};
 
 } // namespace termui

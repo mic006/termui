@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Michel Palleau
+Copyright 2021 Michel Palleau
 
 This file is part of termui.
 
@@ -26,47 +26,10 @@ along with termui. If not, see <https://www.gnu.org/licenses/>.
 
 namespace termui::internal
 {
-/// Available signal catcher instance
-static ScopedSignalCatcher *signalCatcher;
-
-/// Signal handler
-static void sigHandler(int signum)
-{
-    if (signalCatcher != nullptr)
-        signalCatcher->handle(signum);
-}
-
-ScopedSignalCatcher::ScopedSignalCatcher()
-{
-    // create pipe to forward signals to main loop
-    int pipeFds[2];
-    if (::pipe2(pipeFds, O_NONBLOCK))
-        throw TermUiExceptionErrno{"pipe2"};
-    fdReceive = ScopedFd{pipeFds[0]};
-    fdEmit = ScopedFd{pipeFds[1]};
-
-    // register signal handler
-    signalCatcher = this;
-    struct sigaction sigAction = {};
-    sigAction.sa_handler = sigHandler;
-    sigaction(SIGWINCH, &sigAction, &oldSigActWinch);
-    sigaction(SIGINT, &sigAction, &oldSigActInt);
-    sigaction(SIGTERM, &sigAction, &oldSigActTerm);
-}
-
-ScopedSignalCatcher::~ScopedSignalCatcher()
-{
-    // restore signal handlers
-    sigaction(SIGWINCH, &oldSigActWinch, nullptr);
-    sigaction(SIGINT, &oldSigActInt, nullptr);
-    sigaction(SIGTERM, &oldSigActTerm, nullptr);
-    signalCatcher = nullptr;
-}
-
 ScopedTty::ScopedTty()
-    : ScopedFd{ScopedFd::open("/dev/tty", O_RDWR)}, width{-1}, height{-1}
+    : ScopedFd{csys::ScopedFd::open("/dev/tty", O_RDWR)}, width{-1}, height{-1}
 {
-    if (isValid())
+    if (bool(*this))
     {
         ::tcgetattr(fd, &origTermios);
 
@@ -83,8 +46,9 @@ ScopedTty::ScopedTty()
 
 ScopedTty::~ScopedTty()
 {
-    if (isValid())
+    if (bool(*this))
     {
+        // restore terminal
         ::tcsetattr(fd, TCSAFLUSH, &origTermios);
     }
 }
@@ -99,14 +63,7 @@ void ScopedBufferedTty::rxFd()
 {
     if (m_rxFilled < m_rxBuffer.size())
     {
-        ssize_t nbRead = ::read(fd, &m_rxBuffer[m_rxFilled], m_rxBuffer.size() - m_rxFilled);
-        if (nbRead < 0)
-        {
-            if (errno != EINTR and errno != EAGAIN)
-                throw TermUiExceptionErrno{"tty read"};
-            nbRead = 0;
-        }
-        m_rxFilled += nbRead;
+        m_rxFilled += readNonBlocking(&m_rxBuffer[m_rxFilled], m_rxBuffer.size() - m_rxFilled);
     }
 }
 
@@ -128,14 +85,7 @@ void ScopedBufferedTty::txFlush()
     // send all data
     do
     {
-        ssize_t nbWritten = ::write(fd, &m_txBuffer[sent], m_txBuffer.size() - sent);
-        if (nbWritten < 0)
-        {
-            if (errno != EINTR and errno != EAGAIN)
-                throw TermUiExceptionErrno{"tty write"};
-            nbWritten = 0;
-        }
-        sent += nbWritten;
+        sent += write(&m_txBuffer[sent], m_txBuffer.size() - sent);
     } while (sent < m_txBuffer.size());
     // flush
     m_txBuffer.clear();
