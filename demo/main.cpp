@@ -289,27 +289,33 @@ std::string MainApp::drawKeyboardScreen()
 std::string MainApp::drawDocScreen()
 {
     const int width = m_term.width();
-    char32_t italic = U32Format::buildEffect(Effect::kItalic);
-    char32_t normal = U32Format::buildEffect(0);
 
-    int line = 2;
-    m_term.addString(line++, 0, "Minimal usage", Effect::kBold);
-    m_term.addFString(line++, 0, U"- instantiate a "s + italic + U"TermUi", width);
-    m_term.addFString(line++, 0, U"- use the "s + italic + U"addString*()" + normal + U" methods to add content to the screen", width);
-    m_term.addFString(line++, 0, U"- call "s + italic + U"waitForEvent()" + normal + U" to wait for user interaction", width);
-    m_term.addString(line++, 0, "- handle at least the following events:");
-    m_term.addFString(line++, 0, U"  - "s + italic + U"kCtrlC" + normal + U", "s + italic + U"kSigInt" + normal + U", "s + italic + U"kSigTerm" + normal + U" to quit the application", width);
-    m_term.addFString(line++, 0, U"  - "s + italic + U"kTermResize" + normal + U" to redraw the screen based on its new size", width);
-    line++;
-    m_term.addString(line++, 0, "Important APIs", Effect::kBold);
-    m_term.addFString(line++, 0, U"- "s + italic + U"addGlyph" + normal + U": add a single unicode character at the given position", width);
-    m_term.addFString(line++, 0, U"- "s + italic + U"addString" + normal + U": add a UTF-8 string, starting at the given position", width);
-    m_term.addFString(line++, 0, U"- "s + italic + U"addStringN" + normal + U": add a UTF-8 string with a fixed length, with alignment and clipping options", width);
-    m_term.addFString(line++, 0, U"- "s + italic + U"addStringsN" + normal + U": add 3 UTF-8 strings as left / middle / right in a given length", width);
-    m_term.addString(line++, 0, "  (used to display the footer)");
-    m_term.addFString(line++, 0, U"- "s + italic + U"addFString" + normal + U": add a UTF-32 string with special formatting values to change colors / effects in the middle", width);
-    m_term.addString(line++, 0, "  (used to display most lines of this list)");
-    m_term.addFString(line++, 0, U"- "s + italic + U"waitForEvent" + normal + U": publish frame buffer content to the screen and wait for an event (keyboard, signal, resize)", width);
+    m_term.addMarkdown(1,
+                       0,
+                       R"(**Minimal usage**
+- Create a daughter class of //termui::MainApp//
+  - implement //drawHandler()// to draw your app
+    - use //addString*()// methods to add content
+    - at last, call //publish()// to update the screen
+  - implement //eventHandler()// to manage keyboard inputs
+
+- in //main()//
+  - instantiate a //csys::MainPollHandler//
+  - capture SIGINT, SIGTERM and SIGWINCH signals ("//mainPollHandler.setSignals(SIGINT, SIGTERM, SIGWINCH);//")
+  - instantiate a //termui::TermUi//
+  - instantiate your app
+  - end with return "//mainPollHandler.runForever();//"
+                                                                                                                                                   
+**Drawing APIs**
+- //addGlyph//: add a single unicode character at the given position
+- //addString//: add a UTF-8 string, starting at the given position
+- //addStringN//: add a UTF-8 string with a fixed length, with alignment and clipping options
+- //addStringsN//: add 3 UTF-8 strings as left / middle / right in a given length (used to display the footer)
+- //addFString//: add a UTF-32 string with special formatting values to change colors / effects in the middle
+- //addMarkdown//: add markdown text to the screen, with basic formatting
+  (2* for **bold**, 2/ for //italic//, 2_ for __underline__, 2- for --crossed-out--)
+)",
+                       width);
 
     return "TermUI demo - extract of API doc";
 }

@@ -161,7 +161,7 @@ void Poll::waitAndProcessEvents(int timeoutMs, int nbSimulatenousEvents)
 
     // wait for events or timeout
     int nbEvents = ::epoll_wait(m_epollFd.fd, events, nbSimulatenousEvents, timeoutMs);
-    if (nbEvents < 0)
+    if (nbEvents < 0 and errno != EINTR)
         throw CsysExceptionErrno{"epoll_wait", path};
 
     // process received events

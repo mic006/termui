@@ -320,16 +320,19 @@ public:
 
     static char32_t buildEffect(Effect effect)
     {
-        return effect.value() | effectMask | invalidUnicodeMask;
+        return effect.value() | effectMask;
     }
     static char32_t buildColorFg(Color color)
     {
-        return color.value() | colorFgMask | invalidUnicodeMask;
+        return color.value() | colorFgMask;
     }
     static char32_t buildColorBg(Color color)
     {
-        return color.value() | colorBgMask | invalidUnicodeMask;
+        return color.value() | colorBgMask;
     }
+
+    /// Convert Markdown UTF-32 string to U32Format formatted string
+    static void convertMarkdown(std::u32string &str);
 };
 
 /// Rendering context: color + effect settings to apply to text
@@ -547,6 +550,18 @@ public:
      */
     void addFString(int y, int x, const std::u32string &formattedStr, int width);
 
+    /** Add a markdown text to the framebuffer, with a maximum length.
+     * 
+     * Display the given text, limited to the given maximum length.
+     * The string may contain multiple lines, with markdown formatting.
+     *
+     * @param[in] y             line / row index, starting from 0
+     * @param[in] x             column index, starting from 0
+     * @param[in] str           markdown text
+     * @param[in] width         display width used by the string
+     */
+    void addMarkdown(int y, int x, const std::string &str, int width);
+
     /// Publish the frameBuffer content to the screen
     void publish();
 
@@ -683,13 +698,16 @@ inline void TermUi::addString(int y, int x, const std::string &str, Color colorF
 
 inline void TermUi::setColors(int y, int x, int width, Color colorFg, Color colorBg)
 {
-    auto *cellPtr = &m_frameBuffer[y * m_tty.width + x];
-    for (int i = 0; i < width; i++, cellPtr++)
+    if (x >= 0 and x < m_tty.width and y >= 0 and y < m_tty.height)
     {
-        cellPtr->colorFg = colorFg;
-        cellPtr->colorBg = colorBg;
+        auto *cellPtr = &m_frameBuffer[y * m_tty.width + x];
+        for (int i = 0; i < std::min(width, m_tty.width - x); i++, cellPtr++)
+        {
+            cellPtr->colorFg = colorFg;
+            cellPtr->colorBg = colorBg;
+        }
+        m_dirty = true;
     }
-    m_dirty = true;
 }
 
 /// Base class for terminal application

@@ -122,6 +122,40 @@ Color Color::fromHsv(float hue, float saturation, float value)
         return Color::fromRgb(colFull, colLow, colInter);
 }
 
+void U32Format::convertMarkdown(std::u32string &str)
+{
+    // transform the string in place
+    size_t readIndex = 0;
+    size_t writeIndex = 0;
+    Effect currentEffect{};
+
+    while (readIndex < str.size())
+    {
+        const char32_t c = str[readIndex];
+        if ((c == U'*' or c == U'/' or c == U'_' or c == U'-') and
+            readIndex + 1 < str.size() and
+            c == str[readIndex + 1])
+        {
+            // pattern found
+            uint32_t effectMask =
+                c == U'*' ? Effect::kBold : c == U'/' ? Effect::kItalic
+                                        : c == U'_'   ? Effect::kUnderline
+                                                      : Effect::kCrossedOut;
+            // update effect, with XOR
+            currentEffect = currentEffect.value() ^ effectMask;
+
+            // replace pattern with effect U32Format value
+            str[writeIndex++] = U32Format::buildEffect(currentEffect);
+            readIndex += 2;
+        }
+        else
+            // normal char, copy it
+            str[writeIndex++] = str[readIndex++];
+    }
+    // string may have a shorter length after replacement
+    str.resize(writeIndex);
+}
+
 TermUi::TermUi(csys::MainPollHandler &mainPollHandler)
     : m_tty{}, m_frameBuffer{}, m_dirty{false},
       m_colorFg{Color::fromPalette(7)},
@@ -327,41 +361,71 @@ void TermUi::addFString(int y, int x, const std::u32string &formattedStr, int wi
     Color colorBg = m_colorBg;
     Effect effect = 0;
 
-    auto *cellPtr = &m_frameBuffer[y * m_tty.width + x];
-
-    for (char32_t c : formattedStr)
+    width = std::min(width, m_tty.width - x);
+    if (x >= 0 and x < m_tty.width and y >= 0 and y < m_tty.height)
     {
-        if (width == 0)
-            break;
-        if (U32Format::isU32Format(c))
+        auto *cellPtr = &m_frameBuffer[y * m_tty.width + x];
+
+        for (char32_t c : formattedStr)
         {
-            if (U32Format::isEffect(c))
-                effect = U32Format::getEffect(c);
-            else if (U32Format::isColorFg(c))
-                colorFg = U32Format::getColor(c);
-            else if (U32Format::isColorBg(c))
-                colorBg = U32Format::getColor(c);
+            if (width == 0)
+                break;
+            if (U32Format::isU32Format(c))
+            {
+                if (U32Format::isEffect(c))
+                    effect = U32Format::getEffect(c);
+                else if (U32Format::isColorFg(c))
+                    colorFg = U32Format::getColor(c);
+                else if (U32Format::isColorBg(c))
+                    colorBg = U32Format::getColor(c);
+            }
+            else
+            {
+                cellPtr->colorFg = colorFg;
+                cellPtr->colorBg = colorBg;
+                cellPtr->effect = effect;
+                cellPtr->glyph = c;
+                cellPtr++;
+                width--;
+            }
         }
-        else
+        // add spaces until width
+        while (width > 0)
         {
             cellPtr->colorFg = colorFg;
             cellPtr->colorBg = colorBg;
             cellPtr->effect = effect;
-            cellPtr->glyph = c;
+            cellPtr->glyph = U' ';
             cellPtr++;
             width--;
         }
+        m_dirty = true;
     }
-    // add spaces until width
-    while (width > 0)
+}
+
+void TermUi::addMarkdown(int y, int x, const std::string &str, int width)
+{
+    // process text by line
+    size_t lineBegin = 0;
+    size_t lineEnd = 0;
+    do
     {
-        cellPtr->colorFg = colorFg;
-        cellPtr->colorBg = colorBg;
-        cellPtr->effect = effect;
-        cellPtr->glyph = U' ';
-        cellPtr++;
-        width--;
-    }
+        lineEnd = str.find("\n", lineBegin);
+        if (lineEnd == std::string::npos)
+            lineEnd = str.size();
+
+        // convert UTF-8 to UTF-32
+        std::u32string u32Str = toU32String(str.substr(lineBegin, lineEnd - lineBegin));
+
+        // replace markdown patterns with the relevant effect
+        U32Format::convertMarkdown(u32Str);
+
+        // add the resulting string
+        addFString(y++, x, u32Str, width);
+
+        lineBegin = lineEnd + 1;
+    } while (lineBegin < str.size());
+
     m_dirty = true;
 }
 
