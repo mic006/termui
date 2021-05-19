@@ -492,6 +492,12 @@ public:
         m_signalCbks[sig] = std::move(handler);
     }
 
+    /// Whether exit has been requested
+    bool isExitRequested() const
+    {
+        return m_exitRequested.load();
+    }
+
     /// Asynchronous termination request, wake main thread
     void requestTermination(int exitStatus = EXIT_SUCCESS)
     {
