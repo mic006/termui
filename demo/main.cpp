@@ -37,7 +37,7 @@ static csys::MainPollHandler mainPollHandler{};
 class MainApp : protected termui::TermApp
 {
 public:
-    MainApp(TermUi &term);
+    MainApp(csys::MainPollHandler &mainPollHandler);
     void drawHandler() override;
     void eventHandler(Event event) override;
 
@@ -65,8 +65,8 @@ protected:
     Event m_lastEvent{}; ///< last event for keyboard screen
 };
 
-MainApp::MainApp(TermUi &term)
-    : termui::TermApp{term},
+MainApp::MainApp(csys::MainPollHandler &mainPollHandler)
+    : termui::TermApp{mainPollHandler},
       m_screen{DemoScreen::Welcome},
       m_glyph{'X'}
 
@@ -302,7 +302,6 @@ std::string MainApp::drawDocScreen()
 - in //main()//
   - instantiate a //csys::MainPollHandler//
   - capture SIGINT, SIGTERM and SIGWINCH signals ("//mainPollHandler.setSignals(SIGINT, SIGTERM, SIGWINCH);//")
-  - instantiate a //termui::TermUi//
   - instantiate your app
   - end with return "//mainPollHandler.runForever();//"
                                                                                                                                                    
@@ -418,8 +417,7 @@ int main()
 {
     std::locale::global(std::locale(""));
     mainPollHandler.setSignals(SIGINT, SIGTERM, SIGWINCH);
-    TermUi term{mainPollHandler};
-    MainApp mainapp{term};
+    MainApp mainApp{mainPollHandler};
 
     return mainPollHandler.runForever();
 }

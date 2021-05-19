@@ -419,7 +419,6 @@ class TermApp;
  *   - instantiate a csys::MainPollHandler
  *   - capture SIGINT, SIGTERM and SIGWINCH signals
  *     ("mainPollHandler.setSignals(SIGINT, SIGTERM, SIGWINCH);")
- *   - instantiate a termui::TermUi
  *   - instantiate your app
  *   - end with return "mainPollHandler.runForever();"
  * 
@@ -448,7 +447,7 @@ class TermApp;
 class TermUi
 {
 public:
-    TermUi(csys::MainPollHandler &mainPollHandler);
+    TermUi(TermApp &app, csys::MainPollHandler &mainPollHandler);
     ~TermUi();
 
     // not copyable
@@ -458,11 +457,6 @@ public:
     // movable
     TermUi(TermUi &&) noexcept = default;
     TermUi &operator=(TermUi &&) noexcept = default;
-
-    void setTermApp(TermApp *app)
-    {
-        m_app = app;
-    }
 
     /// Reset frameBuffer (without publishing)
     void reset();
@@ -630,7 +624,7 @@ private:
         Color wantedFg,
         Color wantedBg);
 
-    TermApp *m_app;                    ///< user application
+    TermApp &m_app;                    ///< user application
     internal::ScopedBufferedTty m_tty; ///< tty handler
     std::vector<Cell> m_frameBuffer;   ///< store / preparation of next screen content
     Color m_colorFg;                   ///< screen default foreground color
@@ -711,10 +705,9 @@ inline void TermUi::setColors(int y, int x, int width, Color colorFg, Color colo
 class TermApp
 {
 public:
-    TermApp(TermUi &term)
-        : m_term{term}
+    TermApp(csys::MainPollHandler &mainPollHandler)
+        : m_term{*this, mainPollHandler}
     {
-        m_term.setTermApp(this);
     }
 
     // not copyable
@@ -732,7 +725,7 @@ public:
     virtual void eventHandler(Event event) = 0;
 
 protected:
-    TermUi &m_term; ///< termui handler
+    TermUi m_term; ///< termui handler
 };
 
 } // namespace termui

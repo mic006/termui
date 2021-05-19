@@ -156,8 +156,8 @@ void U32Format::convertMarkdown(std::u32string &str)
     str.resize(writeIndex);
 }
 
-TermUi::TermUi(csys::MainPollHandler &mainPollHandler)
-    : m_tty{}, m_frameBuffer{},
+TermUi::TermUi(TermApp &app, csys::MainPollHandler &mainPollHandler)
+    : m_app{app}, m_tty{}, m_frameBuffer{},
       m_colorFg{Color::fromPalette(7)},
       m_colorBg{Color::fromPalette(0)}
 {
@@ -467,15 +467,13 @@ void TermUi::readTtyHandler(uint32_t events)
         }
 
         // report event
-        if (m_app != nullptr)
-            m_app->eventHandler(event);
+        m_app.eventHandler(event);
     }
 }
 
 void TermUi::resizeSigHandler()
 {
-    if (m_app != nullptr)
-        m_app->drawHandler();
+    m_app.drawHandler();
 }
 
 void TermUi::updateColorSetting(Color color, bool isFg)
