@@ -25,6 +25,7 @@ along with termui. If not, see <https://www.gnu.org/licenses/>.
 #pragma once
 
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -177,6 +178,10 @@ struct Color
     static constexpr Color fromRgb(uint8_t red, uint8_t green, uint8_t blue)
     {
         return Color{rgbMask | ((uint32_t)red << 16) | ((uint32_t)green << 8) | blue};
+    }
+    static constexpr Color fromRgb(uint32_t rgb)
+    {
+        return Color{rgbMask | rgb};
     }
 
     /** Build a color from HSV description.
